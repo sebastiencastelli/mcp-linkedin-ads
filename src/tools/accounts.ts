@@ -33,8 +33,8 @@ export function registerAccountTools(server: McpServer, client: AxiosInstance): 
       description:
         "Returns every LinkedIn Ad Account the authenticated member has access to. " +
         "ALWAYS call this first when starting a new task — Claude needs the account_id " +
-        "to perform any other action. The same OAuth grant covers Sébastien's own accounts " +
-        "AND any client accounts where he has been invited as a manager.",
+        "to perform any other action. The same OAuth grant covers the member's own accounts " +
+        "AND any client accounts where they have been invited as a manager.",
       inputSchema: {
         pagination: CursorPaginationSchema.optional().describe(
           "Optional pagination (cursor-based, v202401+). Omit for the first page.",

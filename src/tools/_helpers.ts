@@ -65,7 +65,7 @@ export async function callLinkedInWithHeaders<T>(
  * LinkedIn may return the new ID via:
  *   1. `x-restli-id` (most endpoints)
  *   2. `x-linkedin-id` (older variants)
- *   3. `location` header — e.g. "/adAccounts/514213130/creatives/1247234164"
+ *   3. `location` header — e.g. "/adAccounts/123456789/creatives/987654321"
  *      where the last path segment is the ID.
  *
  * Returns the ID as a number, or undefined when none of the headers are present.

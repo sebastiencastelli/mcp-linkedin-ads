@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { callTool, TEST_ACCOUNT_ID, futureTimestamp, uniqueName } from "./_mcp-client.js";
+import {
+  callTool,
+  TEST_ACCOUNT_ID,
+  KNOWN_CAMPAIGN_ID,
+  futureTimestamp,
+  uniqueName,
+} from "./_mcp-client.js";
 
 // ---------------------------------------------------------------------------
 // Shared date helpers
@@ -25,10 +31,9 @@ function last365Days(): { start: { year: number; month: number; day: number }; e
   return { start, end };
 }
 
-/** Known active campaign on account 514213130. Used for campaign-scoped analytics
- *  (sandbox DRAFT campaigns have zero impressions so LinkedIn may return 0 rows,
- *  which is valid but doesn't let us assert on row shape). */
-const KNOWN_CAMPAIGN_ID = 565002214;
+// KNOWN_CAMPAIGN_ID is imported from the helper (SMOKE_KNOWN_CAMPAIGN_ID env var).
+// It points to an existing active/completed campaign with historical analytics data —
+// sandbox DRAFT campaigns have zero impressions so LinkedIn returns empty results.
 
 // Minimal France targeting reused for sandbox campaigns.
 const FR_TARGETING = {
@@ -348,8 +353,12 @@ describe("analytics — campaign-level", () => {
   it(
     "with campaigns filter — known active campaign scoped results",
     async () => {
-      // Campaign 565002214 ("TPE & Freelances - Cold - Engagement - TLA - Vidéo")
-      // exists on account 514213130 and has real historical data.
+      // KNOWN_CAMPAIGN_ID points to an existing campaign with historical data
+      // (passed via SMOKE_KNOWN_CAMPAIGN_ID env var).
+      if (KNOWN_CAMPAIGN_ID === undefined) {
+        console.warn("SMOKE_KNOWN_CAMPAIGN_ID not set — skipping campaign-scoped test");
+        return;
+      }
       const r = await callTool("get_campaign_analytics", {
         account_id: TEST_ACCOUNT_ID,
         query: {
@@ -393,6 +402,10 @@ describe("analytics — campaign-level", () => {
   it(
     "campaign-level DAILY granularity — rows carry dateRange when non-empty",
     async () => {
+      if (KNOWN_CAMPAIGN_ID === undefined) {
+        console.warn("SMOKE_KNOWN_CAMPAIGN_ID not set — skipping campaign-scoped test");
+        return;
+      }
       const r = await callTool("get_campaign_analytics", {
         account_id: TEST_ACCOUNT_ID,
         query: {

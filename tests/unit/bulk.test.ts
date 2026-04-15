@@ -53,7 +53,7 @@ describe("bulk_pause_campaigns", () => {
     const handler = await loadAndRegister();
     mockRequest.mockResolvedValueOnce(makeMockResponse(204));
 
-    await handler({ account_id: "514213130", campaign_ids: ["111", "222", "333"] });
+    await handler({ account_id: "123456789", campaign_ids: ["111", "222", "333"] });
 
     expect(mockRequest).toHaveBeenCalledTimes(1);
     mockRequest.mockReset();
@@ -63,11 +63,11 @@ describe("bulk_pause_campaigns", () => {
     const handler = await loadAndRegister();
     mockRequest.mockResolvedValueOnce(makeMockResponse(204));
 
-    await handler({ account_id: "514213130", campaign_ids: ["111", "222", "333"] });
+    await handler({ account_id: "123456789", campaign_ids: ["111", "222", "333"] });
 
     const callArg: { url: string } = mockRequest.mock.calls[0][0] as { url: string };
     expect(callArg.url).toBe(
-      "/adAccounts/514213130/adCampaigns?ids=List(111,222,333)",
+      "/adAccounts/123456789/adCampaigns?ids=List(111,222,333)",
     );
     mockRequest.mockReset();
   });
@@ -76,7 +76,7 @@ describe("bulk_pause_campaigns", () => {
     const handler = await loadAndRegister();
     mockRequest.mockResolvedValueOnce(makeMockResponse(204));
 
-    await handler({ account_id: "514213130", campaign_ids: ["111"] });
+    await handler({ account_id: "123456789", campaign_ids: ["111"] });
 
     const callArg = mockRequest.mock.calls[0][0] as { headers: Record<string, string> };
     expect(callArg.headers["X-RestLi-Method"]).toBe("BATCH_PARTIAL_UPDATE");
@@ -87,7 +87,7 @@ describe("bulk_pause_campaigns", () => {
     const handler = await loadAndRegister();
     mockRequest.mockResolvedValueOnce(makeMockResponse(204));
 
-    await handler({ account_id: "514213130", campaign_ids: ["111", "222", "333"] });
+    await handler({ account_id: "123456789", campaign_ids: ["111", "222", "333"] });
 
     const callArg = mockRequest.mock.calls[0][0] as { data: { entities: Record<string, unknown> } };
     expect(callArg.data.entities).toEqual({
@@ -103,7 +103,7 @@ describe("bulk_pause_campaigns", () => {
     mockRequest.mockResolvedValueOnce(makeMockResponse(204, null));
 
     const result = (await handler({
-      account_id: "514213130",
+      account_id: "123456789",
       campaign_ids: ["111", "222"],
     })) as { content: Array<{ text: string }> };
 
@@ -128,7 +128,7 @@ describe("bulk_pause_campaigns", () => {
     );
 
     const result = (await handler({
-      account_id: "514213130",
+      account_id: "123456789",
       campaign_ids: ["111", "222"],
     })) as { content: Array<{ text: string }> };
 
@@ -154,7 +154,7 @@ describe("bulk_pause_campaigns", () => {
     );
 
     const result = (await handler({
-      account_id: "514213130",
+      account_id: "123456789",
       campaign_ids: ["111", "222"],
     })) as { content: Array<{ text: string }> };
 

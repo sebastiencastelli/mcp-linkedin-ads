@@ -1,53 +1,77 @@
 # MCP LinkedIn Ads
 
-Serveur MCP (Model Context Protocol) qui expose l'API LinkedIn Marketing
-(Advertising tier Standard) sous forme d'~21 outils pour piloter Campaign
-Manager depuis Claude (web, Desktop, CLI).
+Model Context Protocol server that connects the LinkedIn Marketing API (Advertising Standard tier) to Claude — Web, Desktop, and CLI. Pilot your LinkedIn advertising accounts conversationally: ask Claude to audit performance, adjust bids, create campaigns, pause underperformers, estimate audiences, and more.
 
-Un seul déploiement = un seul OAuth LinkedIn = accès à **tous les Ad Accounts**
-auxquels le membre authentifié a un rôle (ses propres comptes + ceux des
-clients où il a été invité comme manager).
+One deployment = one LinkedIn OAuth grant = access to **every Ad Account** the authenticated member has a role on (own accounts + client accounts where invited as a manager).
 
-## Pour qui
+## Who it's for
 
-Pour Sébastien et toute personne qui gère plusieurs comptes publicitaires
-LinkedIn et veut les piloter par instructions naturelles dans Claude au lieu
-de cliquer dans Campaign Manager.
+- **LinkedIn Ads freelancers & agencies** managing multiple client accounts and tired of clicking in Campaign Manager
+- **In-house marketing teams** wanting instant performance reports and AI-driven optimizations
+- **Growth / RevOps engineers** building automations on top of LinkedIn advertising data
+- **B2B SaaS companies** connecting their ad spend and campaign state to internal AI assistants
 
-## Quoi
+## What's inside
 
-- Serveur HTTP+SSE en Node 22 / TypeScript
-- ~21 outils MCP : list/create/update sur Ad Accounts, Campaign Groups,
-  Campaigns, Creatives, Targeting, Analytics, plus des outils composites
-  (`bulk_pause_campaigns`, `duplicate_campaign`)
-- Wizard web embarqué (`/setup`) pour le bootstrap OAuth en quelques clics
-- Token store chiffré au repos (AES-256-GCM)
-- Refresh token rotatif géré automatiquement
-- Backoff exponentiel sur les 429
-- Déploiement Docker en une commande, HTTPS automatique via Caddy +
-  Let's Encrypt
+- HTTP + SSE server in Node 22 / TypeScript, using `@modelcontextprotocol/sdk`
+- **23 MCP tools** across 5 domains:
+  - Hierarchy: list/get/create/update on Ad Accounts, Campaign Groups, Campaigns
+  - Creatives: list/get/create (text, image, video) /update on Sponsored Content
+  - Targeting: facets catalogue, entity typeahead, audience size estimation
+  - Analytics: account-level and campaign-level reporting (78 metrics, 23 pivots, 4 granularities)
+  - Composites: `duplicate_campaign`, `bulk_pause_campaigns` (single BATCH_PARTIAL_UPDATE call)
+- Embedded web wizard at `/setup` for one-click OAuth bootstrap
+- Token store encrypted at rest (AES-256-GCM); refresh tokens rotated automatically
+- Exponential backoff on 429 and 5xx; cursor-based pagination where LinkedIn requires it
+- Docker Compose deployment — Caddy variant (auto HTTPS via Let's Encrypt) or nginx variant for servers with an existing reverse proxy
 
-## Démarrage rapide
+## Quick start
 
-Voir [`docs/INSTALL.md`](docs/INSTALL.md) pour le guide d'installation
-complet (en français).
+See [`docs/INSTALL.md`](docs/INSTALL.md) for the full 30-minute install guide. High-level:
+
+1. Provision a Linux server with Docker + a domain you control
+2. Create a LinkedIn Developer App, add the **Advertising API** product
+3. Clone the repo, run `./scripts/generate-secrets.sh` to bootstrap `docker/.env`
+4. Add the redirect URI in LinkedIn Developer Portal
+5. `docker compose up -d --build`
+6. Open `https://your-domain/setup`, paste the API token, click **Connect LinkedIn**
+7. Point Claude (Code / Desktop / Web) at `https://your-domain/mcp` with the bearer token
 
 ## Documentation
 
-- [`docs/INSTALL.md`](docs/INSTALL.md) — installation pas à pas pour Sébastien
-- [`docs/TOOLS.md`](docs/TOOLS.md) — liste des outils MCP avec exemples
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — choix techniques et points
-  d'extension pour reprise du projet
+- [`docs/INSTALL.md`](docs/INSTALL.md) — step-by-step installation
+- [`docs/TOOLS.md`](docs/TOOLS.md) — full tool reference with examples
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — design decisions and extension points
+- [`tests/smoke/README.md`](tests/smoke/README.md) — how to run end-to-end smoke tests against a live deployment
 
-## Hors scope
+## Testing
 
-- **Matched Audiences / Conversions API / Lead Sync** : nécessitent des
-  approbations LinkedIn séparées non incluses dans le tier Standard
-- **Multi-tenant** : un déploiement = un membre LinkedIn (qui couvre déjà N
-  Ad Accounts via les invitations Campaign Manager)
-- **UI de gestion** : c'est Claude qui pilote, pas une interface web qui
-  remplacerait Campaign Manager
+```bash
+pnpm test                          # 35 unit tests (URN, crypto, serializers, bulk batch)
+pnpm typecheck                     # TypeScript strict
+MCP_URL=… MCP_TOKEN=… pnpm test tests/smoke/   # 76 end-to-end smoke tests
+```
 
-## Licence
+## Out of scope
 
-Privé — projet client.
+The following LinkedIn products are **not** covered by this MCP. They require separate LinkedIn API approvals (Community Management API, Lead Sync, Matched Audiences, Conversions API, Audience Insights, Media Planning, Event Management). This server focuses purely on the Advertising API (Standard tier).
+
+- Matched Audiences (DMP segments, website retargeting)
+- Lead Sync from Lead Gen Forms → CRM
+- Conversions API (server-side event tracking)
+- Event Management APIs
+- Community Management — note this blocks programmatic image/video upload; see `docs/TOOLS.md` for the limitation and workarounds
+- Multi-tenant mode (one deployment = one LinkedIn member, which already covers N Ad Accounts via Campaign Manager invitations)
+
+## Contributing
+
+Pull requests welcome. Before submitting:
+
+1. `pnpm typecheck` must pass
+2. `pnpm test` (unit tests) must pass
+3. Add a smoke test if you add a new tool or change input/output shape
+4. Follow the existing code style (run `pnpm format` if configured)
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).

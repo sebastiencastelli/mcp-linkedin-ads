@@ -130,8 +130,23 @@ function safeJsonParse(s: string): unknown {
   }
 }
 
-/** Test account used by every smoke test. */
-export const TEST_ACCOUNT_ID = 514213130;
+/** Ad Account ID used by every smoke test — set SMOKE_ACCOUNT_ID in env. */
+const rawAccountId = process.env.SMOKE_ACCOUNT_ID;
+if (!rawAccountId) {
+  throw new Error(
+    "Smoke tests require SMOKE_ACCOUNT_ID env var (a LinkedIn Ad Account ID " +
+      "reachable via the configured OAuth token).",
+  );
+}
+export const TEST_ACCOUNT_ID = Number(rawAccountId);
+if (!Number.isFinite(TEST_ACCOUNT_ID) || TEST_ACCOUNT_ID <= 0) {
+  throw new Error(`SMOKE_ACCOUNT_ID must be a positive integer, got: ${rawAccountId}`);
+}
+
+/** A known campaign ID on TEST_ACCOUNT_ID used by campaign-scoped analytics smoke tests. */
+export const KNOWN_CAMPAIGN_ID = process.env.SMOKE_KNOWN_CAMPAIGN_ID
+  ? Number(process.env.SMOKE_KNOWN_CAMPAIGN_ID)
+  : undefined;
 
 /** Timestamp helper for setting runSchedule.start safely in the future. */
 export function futureTimestamp(daysFromNow = 30): number {

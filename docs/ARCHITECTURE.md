@@ -154,7 +154,7 @@ pas de build front. Tient en 2 fichiers et zéro maintenance.
 
 ## Comment ajouter un nouveau scope LinkedIn
 
-Si plus tard Sébastien obtient l'approbation pour Matched Audiences ou
+Si plus tard tu obtiens l'approbation LinkedIn pour Matched Audiences ou
 Conversions API :
 
 1. Ajouter le scope (`rw_dmp_segments` par ex.) dans la valeur par défaut

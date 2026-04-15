@@ -2,10 +2,10 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import type { AppConfig } from "../../config.js";
 
 /**
- * Bearer token auth for /mcp and /setup. The token is shared between Sébastien
- * (who pastes it into Claude Desktop / Code / .ai web) and the wizard cookie
- * for browser sessions. We compare in constant time to defend against timing
- * attacks.
+ * Bearer token auth for /mcp and /setup. The same token is used by Claude
+ * clients (Desktop / Code / .ai web) via the Authorization header, and by the
+ * wizard cookie for browser sessions. Compared in constant time to defend
+ * against timing attacks.
  */
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;

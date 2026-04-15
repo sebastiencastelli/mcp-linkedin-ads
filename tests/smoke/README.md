@@ -1,6 +1,6 @@
 # Smoke tests
 
-End-to-end tests that hit the **live deployed MCP server** (https://mcp-linkedin.sebastiencastelli.com) and exercise every tool against the real LinkedIn Marketing API. Designed to:
+End-to-end tests that hit a **live deployed MCP server** and exercise every tool against the real LinkedIn Marketing API. Designed to:
 
 1. Validate that tool schemas match what the LLM sees
 2. Confirm every response shape is parsed correctly
@@ -10,14 +10,14 @@ End-to-end tests that hit the **live deployed MCP server** (https://mcp-linkedin
 ## Running
 
 ```bash
-pnpm test tests/smoke/
+MCP_URL=https://your-mcp-domain.example.com/mcp \
+MCP_TOKEN=<your-mcp-api-token> \
+SMOKE_ACCOUNT_ID=<your-linkedin-ad-account-id> \
+SMOKE_KNOWN_CAMPAIGN_ID=<an-existing-campaign-id-on-that-account> \
+  pnpm test tests/smoke/
 ```
 
-Override defaults via env:
-
-```bash
-MCP_URL=https://other/mcp MCP_TOKEN=xxx pnpm test tests/smoke/
-```
+The env vars are required — the helper will throw if any is missing. See `_mcp-client.ts` for details.
 
 ## What each test creates and cleans up
 
@@ -25,8 +25,8 @@ Tests that need to mutate state create a **sandbox group** with a timestamped na
 
 ## Expected state prerequisites
 
-- Ad Account `514213130` ("Sébastien Castelli") reachable via the configured OAuth token
-- At least one existing campaign to read metadata from (used by `get_campaign`, `get_creative`, `list_creatives` with campaign_id)
+- Ad Account `SMOKE_ACCOUNT_ID` reachable via the configured OAuth token
+- At least one existing campaign (passed via `SMOKE_KNOWN_CAMPAIGN_ID`) for campaign-scoped analytics tests
 
 ## Files
 
