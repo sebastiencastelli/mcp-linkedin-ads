@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MCP LinkedIn Ads — Tableau de bord</title>
+  <style>
+    :root { --bg:#0a0e1a; --fg:#e6e9f2; --muted:#8a92a8; --accent:#0a66c2; --accent-hover:#0958a8; --card:#131829; --border:#222a44; --ok:#2ecc71; --warn:#f39c12; --danger:#e74c3c; }
+    * { box-sizing: border-box; }
+    body { margin:0; background: var(--bg); color: var(--fg); font: 15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif; padding:32px 20px 64px; }
+    .container { max-width:880px; margin:0 auto; }
+    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:32px; }
+    header h1 { margin:0; font-size:24px; font-weight:600; }
+    .logout { color: var(--muted); font-size:13px; text-decoration:none; }
+    .logout:hover { color: var(--fg); }
+    .banner { padding:14px 18px; border-radius:10px; margin-bottom:24px; font-size:14px; }
+    .banner.ok { background: rgba(46,204,113,0.1); border:1px solid rgba(46,204,113,0.3); color: var(--ok); }
+    .card { background: var(--card); border:1px solid var(--border); border-radius:12px; padding:24px 28px; margin-bottom:20px; }
+    .card h2 { margin:0 0 4px; font-size:17px; font-weight:600; }
+    .card .sub { color: var(--muted); font-size:13px; margin:0 0 18px; }
+    .status-row { display:flex; align-items:center; gap:12px; padding:12px 0; border-top:1px solid var(--border); font-size:14px; }
+    .status-row:first-of-type { border-top:0; padding-top:4px; }
+    .status-row .label { color: var(--muted); flex:0 0 200px; }
+    .status-row .value { color: var(--fg); font-family: monospace; font-size:13px; word-break:break-all; }
+    .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+    .pill.ok { background: rgba(46,204,113,0.15); color: var(--ok); }
+    .pill.warn { background: rgba(243,156,18,0.15); color: var(--warn); }
+    .pill.danger { background: rgba(231,76,60,0.15); color: var(--danger); }
+    .btn { display:inline-block; padding:11px 22px; background: var(--accent); color:white; border:0; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; text-decoration:none; transition: background 0.15s; }
+    .btn:hover { background: var(--accent-hover); }
+    .btn.secondary { background: transparent; border:1px solid var(--border); color: var(--fg); }
+    .btn.secondary:hover { background: var(--card); }
+    .actions { display:flex; gap:12px; margin-top:8px; }
+    pre { background: var(--bg); border:1px solid var(--border); border-radius:8px; padding:14px 16px; overflow-x:auto; font-size:12.5px; line-height:1.55; margin: 8px 0 0; }
+    .snippet-block { margin-top:18px; }
+    .snippet-block h3 { margin:0 0 6px; font-size:14px; font-weight:600; }
+    .snippet-block .desc { font-size:12.5px; color: var(--muted); margin: 0 0 8px; }
+    .copy-btn { float:right; font-size:11px; padding:4px 10px; background: var(--card); border:1px solid var(--border); color: var(--muted); border-radius:6px; cursor:pointer; }
+    .copy-btn:hover { color: var(--fg); }
+    .token-display { font-family: monospace; font-size:12px; padding:10px 12px; background: var(--bg); border:1px solid var(--border); border-radius:6px; word-break:break-all; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>MCP LinkedIn Ads</h1>
+      <form method="post" action="/setup/logout" style="margin:0">
+        <button type="submit" class="logout" style="background:transparent;border:0;cursor:pointer;font:inherit">Se déconnecter</button>
+      </form>
+    </header>
+
+    <div id="banner" class="banner ok" style="display:none">
+      OAuth LinkedIn connecté avec succès. Vous pouvez maintenant utiliser le serveur depuis Claude.
+    </div>
+
+    <div class="card">
+      <h2>Connexion LinkedIn</h2>
+      <p class="sub">État de l'authentification OAuth avec LinkedIn Marketing API.</p>
+
+      <div class="status-row">
+        <span class="label">État</span>
+        <span class="value">
+          <span id="status-pill" class="pill warn">Non connecté</span>
+        </span>
+      </div>
+      <div class="status-row">
+        <span class="label">Scopes</span>
+        <span class="value" id="status-scope">—</span>
+      </div>
+      <div class="status-row">
+        <span class="label">Access token expire</span>
+        <span class="value" id="status-expires">—</span>
+      </div>
+      <div class="status-row">
+        <span class="label">Refresh token expire</span>
+        <span class="value" id="status-refresh-expires">—</span>
+      </div>
+      <div class="status-row">
+        <span class="label">Dernière mise à jour</span>
+        <span class="value" id="status-last-refresh">—</span>
+      </div>
+
+      <div class="actions">
+        <a href="/oauth/start" class="btn">Connecter / Reconnecter LinkedIn</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Configuration des clients Claude</h2>
+      <p class="sub">Copiez ces snippets pour brancher chaque client Claude sur le serveur MCP.</p>
+
+      <div class="snippet-block">
+        <h3>URL du serveur MCP</h3>
+        <p class="desc">À utiliser dans Claude.ai (Custom Connector → Add MCP server).</p>
+        <div class="token-display">{{ MCP_URL }}</div>
+      </div>
+
+      <div class="snippet-block">
+        <h3>Jeton Bearer (Authorization)</h3>
+        <p class="desc">À coller dans le header HTTP <code>Authorization: Bearer ...</code>.</p>
+        <div class="token-display">{{ MCP_API_TOKEN }}</div>
+      </div>
+
+      <div class="snippet-block">
+        <h3>Claude Desktop (~/Library/Application Support/Claude/claude_desktop_config.json)</h3>
+        <button class="copy-btn" onclick="copyText('desktop-snippet')">Copier</button>
+        <pre id="desktop-snippet">{{ DESKTOP_SNIPPET }}</pre>
+      </div>
+
+      <div class="snippet-block">
+        <h3>Claude Code (~/.config/claude-code/.mcp.json)</h3>
+        <button class="copy-btn" onclick="copyText('code-snippet')">Copier</button>
+        <pre id="code-snippet">{{ CODE_SNIPPET }}</pre>
+      </div>
+
+      <div class="snippet-block">
+        <h3>Claude.ai (web app)</h3>
+        <p class="desc">Settings → Connectors → Add custom connector. Choisir HTTP/SSE, coller l'URL ci-dessus, ajouter le header <code>Authorization: Bearer ...</code>.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function copyText(id) {
+      const el = document.getElementById(id);
+      navigator.clipboard.writeText(el.innerText).then(() => {
+        const btn = el.previousElementSibling;
+        const old = btn.innerText;
+        btn.innerText = "Copié !";
+        setTimeout(() => (btn.innerText = old), 1500);
+      });
+    }
+
+    // Show banner if redirected from successful OAuth
+    if (location.search.includes("oauth=ok")) {
+      document.getElementById("banner").style.display = "block";
+      history.replaceState({}, "", "/setup/dashboard");
+    }
+
+    // Refresh OAuth status
+    fetch("/setup/status").then((r) => r.json()).then((s) => {
+      const pill = document.getElementById("status-pill");
+      if (s.configured) {
+        pill.className = "pill ok";
+        pill.innerText = "Connecté";
+      } else {
+        pill.className = "pill warn";
+        pill.innerText = "Non connecté";
+      }
+      document.getElementById("status-scope").innerText = s.scope || "—";
+      document.getElementById("status-expires").innerText = s.expiresAt || "—";
+      document.getElementById("status-refresh-expires").innerText = s.refreshExpiresAt || "—";
+      document.getElementById("status-last-refresh").innerText = s.lastRefreshedAt || "—";
+    });
+  </script>
+</body>
+</html>

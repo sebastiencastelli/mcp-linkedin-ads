@@ -1,0 +1,38 @@
+{
+  "name": "mcp-linkedin-ads",
+  "version": "0.1.0",
+  "description": "MCP server exposing the LinkedIn Marketing API (Advertising Standard tier) as ~20 tools, with an embedded OAuth bootstrap wizard. Designed to be deployed once and serve every Ad Account the authenticated member can access.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && pnpm copy:assets",
+    "copy:assets": "node -e \"require('fs').cpSync('src/server/views', 'dist/server/views', {recursive: true})\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^11.0.1",
+    "@fastify/helmet": "^13.0.1",
+    "@fastify/static": "^8.2.0",
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "axios": "^1.7.9",
+    "axios-retry": "^4.5.0",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.1",
+    "pino": "^9.6.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

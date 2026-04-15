@@ -1,0 +1,24 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+docker/.env
+docker/*.env
+
+# Local data — contains the encrypted token store, never commit
+data/
+*.token.json
+test-assets/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# Tests
+coverage/
+*.log

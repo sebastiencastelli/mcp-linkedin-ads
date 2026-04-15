@@ -1,0 +1,63 @@
+# Docker compose for the MCP LinkedIn Ads server.
+#
+# Two services:
+#   - mcp:    the Node app (built from ../Dockerfile)
+#   - caddy:  reverse proxy with automatic HTTPS via Let's Encrypt
+#
+# Required environment variables (read from a .env file in this directory):
+#   LINKEDIN_CLIENT_ID
+#   LINKEDIN_CLIENT_SECRET
+#   PUBLIC_URL          (e.g. https://mcp.example.com — must NOT end with /)
+#   DOMAIN              (e.g. mcp.example.com — used by Caddy for HTTPS)
+#   MCP_API_TOKEN       (use `openssl rand -hex 32`)
+#   ENCRYPTION_KEY      (use `openssl rand -hex 32`)
+
+services:
+  mcp:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: mcp-linkedin-ads
+    restart: unless-stopped
+    environment:
+      LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID}
+      LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET}
+      PUBLIC_URL: ${PUBLIC_URL}
+      MCP_API_TOKEN: ${MCP_API_TOKEN}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATA_DIR: /data
+      PORT: 3000
+    volumes:
+      - mcp-data:/data
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: mcp-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      DOMAIN: ${DOMAIN}
+    depends_on:
+      - mcp
+
+volumes:
+  mcp-data:
+    driver: local
+  caddy-data:
+    driver: local
+  caddy-config:
+    driver: local

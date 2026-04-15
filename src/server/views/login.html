@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MCP LinkedIn Ads — Connexion</title>
+  <style>
+    :root { --bg:#0a0e1a; --fg:#e6e9f2; --muted:#8a92a8; --accent:#0a66c2; --card:#131829; --border:#222a44; }
+    * { box-sizing: border-box; }
+    body { margin:0; background: var(--bg); color: var(--fg); font: 15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+    .card { background: var(--card); border:1px solid var(--border); border-radius:14px; padding:36px 40px; max-width:440px; width:100%; box-shadow: 0 30px 60px rgba(0,0,0,0.4); }
+    h1 { margin:0 0 8px; font-size:22px; font-weight:600; }
+    p.lead { margin:0 0 24px; color: var(--muted); font-size:14px; }
+    label { display:block; font-size:13px; margin-bottom:8px; color: var(--muted); font-weight:500; }
+    input[type=password] { width:100%; padding:12px 14px; background: var(--bg); border:1px solid var(--border); border-radius:8px; color: var(--fg); font: 14px monospace; outline:none; transition: border-color 0.15s; }
+    input[type=password]:focus { border-color: var(--accent); }
+    button { margin-top:18px; width:100%; padding:12px; background: var(--accent); color:white; border:0; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer; transition: opacity 0.15s; }
+    button:hover { opacity: 0.9; }
+    .hint { margin-top:18px; padding-top:18px; border-top:1px solid var(--border); font-size:12px; color: var(--muted); }
+    code { background: var(--bg); padding:2px 6px; border-radius:4px; font-size:12px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>MCP LinkedIn Ads</h1>
+    <p class="lead">Entrez le jeton API du serveur pour accéder au tableau de bord.</p>
+    <form method="post" action="/setup/login">
+      <label for="token">Jeton API</label>
+      <input type="password" id="token" name="token" autocomplete="off" autofocus required>
+      <button type="submit">Se connecter</button>
+    </form>
+    <div class="hint">
+      Le jeton est défini dans le fichier <code>.env</code> côté serveur (variable <code>MCP_API_TOKEN</code>).
+      Si vous l'avez perdu, regardez sur le serveur ou régénérez-en un nouveau avec
+      <code>./scripts/generate-secrets.sh</code> puis redémarrez le conteneur.
+    </div>
+  </main>
+</body>
+</html>

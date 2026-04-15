@@ -1,0 +1,35 @@
+# Caddy reverse proxy in front of the MCP server.
+#
+# Caddy automatically obtains and renews a Let's Encrypt certificate for the
+# domain provided via the DOMAIN environment variable. No manual cert
+# management needed.
+#
+# All traffic to {$DOMAIN} is forwarded to the mcp container on port 3000.
+
+{$DOMAIN} {
+    encode gzip zstd
+
+    # Reverse-proxy everything to the Node app
+    reverse_proxy mcp:3000 {
+        # SSE-friendly: don't buffer responses, keep connections open longer
+        flush_interval -1
+        transport http {
+            read_timeout 30m
+            write_timeout 30m
+        }
+    }
+
+    # Basic security headers; helmet inside Node already sets most of them
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    log {
+        output stderr
+        format console
+        level INFO
+    }
+}
