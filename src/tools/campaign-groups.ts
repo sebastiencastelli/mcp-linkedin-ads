@@ -53,16 +53,19 @@ export function registerCampaignGroupTools(server: McpServer, client: AxiosInsta
         `/adAccounts/${id}/adCampaignGroups?${qs}`,
       );
       const trunc = truncate(data.elements, 50);
+      // Ne pas spreader trunc pour éviter d'inclure elements[] (JSON brut volumineux)
       return jsonResult({
-        ...trunc,
+        truncated: trunc.truncated,
+        total: trunc.total,
+        shown: trunc.shown,
         nextPageToken: data.metadata?.nextPageToken ?? null,
         groups: trunc.elements.map((g) => ({
           id: g.id,
           urn: ensureUrn("sponsoredCampaignGroup", g.id),
           name: g.name,
           status: g.status,
-          totalBudget: g.totalBudget,
-          runSchedule: g.runSchedule,
+          totalBudget: g.totalBudget ?? null,
+          runSchedule: g.runSchedule ?? null,
         })),
       });
     },

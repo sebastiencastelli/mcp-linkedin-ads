@@ -377,9 +377,24 @@ export function registerCreativeTools(server: McpServer, client: AxiosInstance):
         `/adAccounts/${accId}/creatives?${qs}`,
       );
       const trunc = truncate(data.elements, 50);
+      // Ne pas spreader trunc ni retourner elements[] brut — extraire uniquement les champs utiles
       return jsonResult({
-        ...trunc,
-        creatives: trunc.elements,
+        truncated: trunc.truncated,
+        total: trunc.total,
+        shown: trunc.shown,
+        creatives: trunc.elements.map((cr) => {
+          const content = cr.content as Record<string, unknown> | undefined;
+          const textAd = content?.textAd as Record<string, unknown> | undefined;
+          return {
+            id: cr.id,
+            name: (cr as unknown as Record<string, unknown>).name ?? null,
+            campaign: cr.campaign,
+            intendedStatus: cr.intendedStatus,
+            contentType: textAd ? "textAd" : content?.reference ? "sponsoredPost" : "unknown",
+            headline: textAd?.headline ?? null,
+            landingPage: textAd?.landingPage ?? null,
+          };
+        }),
       });
     },
   );

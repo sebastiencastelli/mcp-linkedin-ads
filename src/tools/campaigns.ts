@@ -25,6 +25,10 @@ interface Campaign {
   status: string;
   costType: string;
   objectiveType: string;
+  // Champs budget/coût présents dans les réponses LinkedIn mais non documentés dans l'interface de base
+  dailyBudget?: { currencyCode: string; amount: string };
+  totalBudget?: { currencyCode: string; amount: string };
+  unitCost?: { currencyCode: string; amount: string };
 }
 
 export function registerCampaignTools(server: McpServer, client: AxiosInstance): void {
@@ -60,8 +64,11 @@ export function registerCampaignTools(server: McpServer, client: AxiosInstance):
         `/adAccounts/${accId}/adCampaigns?${qs}`,
       );
       const trunc = truncate(data.elements, 50);
+      // Ne pas spreader trunc pour éviter d'inclure elements[] (JSON brut volumineux)
       return jsonResult({
-        ...trunc,
+        truncated: trunc.truncated,
+        total: trunc.total,
+        shown: trunc.shown,
         nextPageToken: data.metadata?.nextPageToken ?? null,
         campaigns: trunc.elements.map((c) => ({
           id: c.id,
@@ -71,6 +78,9 @@ export function registerCampaignTools(server: McpServer, client: AxiosInstance):
           type: c.type,
           objectiveType: c.objectiveType,
           costType: c.costType,
+          dailyBudget: c.dailyBudget ?? null,
+          totalBudget: c.totalBudget ?? null,
+          unitCost: c.unitCost ?? null,
         })),
       });
     },
@@ -89,11 +99,25 @@ export function registerCampaignTools(server: McpServer, client: AxiosInstance):
     async ({ account_id, campaign_id }) => {
       const accId = urnId(ensureUrn("sponsoredAccount", account_id));
       const campId = urnId(ensureUrn("sponsoredCampaign", campaign_id));
-      const data = await callLinkedIn<Campaign>(
+      const raw = await callLinkedIn<Record<string, unknown>>(
         client,
         `/adAccounts/${accId}/adCampaigns/${campId}`,
       );
-      return jsonResult(data);
+      // Retirer les champs verbeux qui polluent le contexte sans valeur opérationnelle
+      const {
+        offsitePreferences: _offsitePreferences,
+        connectedTelevisionOnly: _connectedTelevisionOnly,
+        storyDeliveryEnabled: _storyDeliveryEnabled,
+        audienceExpansionEnabled: _audienceExpansionEnabled,
+        creativeSelection: _creativeSelection,
+        version: _version,
+        changeAuditStamps: _changeAuditStamps,
+        associatedEntity: _associatedEntity,
+        test: _test,
+        format: _format,
+        ...clean
+      } = raw;
+      return jsonResult(clean);
     },
   );
 

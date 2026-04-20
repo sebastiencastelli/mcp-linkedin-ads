@@ -95,7 +95,13 @@ export function registerTargetingTools(server: McpServer, client: AxiosInstance)
         `/adTargetingFacets`,
         { timeout: 5000 },
       );
-      return jsonResult({ facets: data.elements });
+      // Ne garder que les champs utiles — entityTypes[] et availableEntityFinders[] sont du bruit
+      return jsonResult({
+        facets: data.elements.map((f) => ({
+          facetName: f.facetName,
+          urn: f.adTargetingFacetUrn,
+        })),
+      });
     },
   );
 

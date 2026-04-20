@@ -187,9 +187,13 @@ export function registerAnalyticsTools(server: McpServer, client: AxiosInstance)
       title: "Get Campaign Analytics",
       description:
         "Fetch performance analytics for one or more campaigns. Pivot/granularity/dateRange/fields " +
-        "control the shape of the report. Returns up to 50 rows inline; if the response is bigger " +
+        "control the shape of the report. Returns up to 25 rows inline; if the response is bigger " +
         "it is written to ${DATA_DIR}/exports/{timestamp}.json and the path is returned. " +
-        "LinkedIn caps a single response at 15 000 rows — narrow the dateRange if you hit that.",
+        "LinkedIn caps a single response at 15 000 rows — narrow the dateRange if you hit that. " +
+        "Guidance for timeGranularity selection: " +
+        "Use ALL for total aggregates, MONTHLY for trends > 30 days, " +
+        "DAILY only for short windows (7-14 days). " +
+        "DAILY on long ranges produces hundreds of rows that consume context — prefer MONTHLY.",
       inputSchema: {
         account_id: AccountIdSchema.describe(
           "Ad Account scope. Used as a default filter if `query.campaigns` is not set.",
@@ -205,7 +209,7 @@ export function registerAnalyticsTools(server: McpServer, client: AxiosInstance)
       // Resolve pivotValues URNs to human-readable labels (e.g. urn:li:title:26 → "Responsable marketing")
       const enrichedRows = await enrichWithLabels(client, data.elements);
 
-      const inlineLimit = 50;
+      const inlineLimit = 25;
       if (enrichedRows.length <= inlineLimit) {
         return jsonResult({
           rowCount: enrichedRows.length,
@@ -213,18 +217,37 @@ export function registerAnalyticsTools(server: McpServer, client: AxiosInstance)
         });
       }
 
-      // Big payload: write to disk and return the path
+      // Big payload: write to disk and return the path + summary stats
       const dataDir = process.env.DATA_DIR ?? "./data";
       const exportsDir = join(dataDir, "exports");
       await mkdir(exportsDir, { recursive: true });
       const filename = join(exportsDir, `analytics-${Date.now()}.json`);
       await writeFile(filename, JSON.stringify(enrichedRows, null, 2));
+
+      // Compute summary stats across ALL rows (not just the preview)
+      const firstRow = enrichedRows[0] ?? {};
+      const numericFields = Object.keys(firstRow).filter(
+        (k) => typeof firstRow[k] === "number",
+      );
+      const summary: Record<string, { total: number; avg: number; min: number; max: number }> = {};
+      for (const field of numericFields) {
+        const values = enrichedRows.map((r) => (r[field] as number) ?? 0);
+        const total = values.reduce((a, b) => a + b, 0);
+        summary[field] = {
+          total,
+          avg: Math.round((total / values.length) * 100) / 100,
+          min: Math.min(...values),
+          max: Math.max(...values),
+        };
+      }
+
       return jsonResult({
         rowCount: enrichedRows.length,
         truncated: true,
+        summary,
         preview: enrichedRows.slice(0, 10),
         exportPath: filename,
-        note: `Full result written to ${filename} (${enrichedRows.length} rows). Read the file with the filesystem tool if you need the rest.`,
+        note: `Full ${enrichedRows.length} rows written to ${filename}. Summary stats computed across all rows.`,
       });
     },
   );
@@ -235,7 +258,13 @@ export function registerAnalyticsTools(server: McpServer, client: AxiosInstance)
       title: "Get Account Analytics",
       description:
         "Fetch aggregated performance analytics at the Ad Account level (across all campaigns). " +
-        "Same shape as get_campaign_analytics but the pivot defaults to ACCOUNT.",
+        "Same shape as get_campaign_analytics but the pivot defaults to ACCOUNT. " +
+        "Returns up to 25 rows inline; if the response is bigger it is written to " +
+        "${DATA_DIR}/exports/{timestamp}.json and the path is returned. " +
+        "Guidance for timeGranularity selection: " +
+        "Use ALL for total aggregates, MONTHLY for trends > 30 days, " +
+        "DAILY only for short windows (7-14 days). " +
+        "DAILY on long ranges produces hundreds of rows that consume context — prefer MONTHLY.",
       inputSchema: {
         account_id: AccountIdSchema,
         query: AnalyticsQuerySchema,
@@ -247,9 +276,46 @@ export function registerAnalyticsTools(server: McpServer, client: AxiosInstance)
       const qs = buildAnalyticsQuery(enrichedQuery, accountUrn);
       const data = await callLinkedIn<AnalyticsResponse>(client, `/adAnalytics?${qs}`);
       const enrichedRows = await enrichWithLabels(client, data.elements);
+
+      const inlineLimit = 25;
+      if (enrichedRows.length <= inlineLimit) {
+        return jsonResult({
+          rowCount: enrichedRows.length,
+          rows: enrichedRows,
+        });
+      }
+
+      // Big payload: write to disk and return the path + summary stats
+      const dataDir = process.env.DATA_DIR ?? "./data";
+      const exportsDir = join(dataDir, "exports");
+      await mkdir(exportsDir, { recursive: true });
+      const filename = join(exportsDir, `analytics-${Date.now()}.json`);
+      await writeFile(filename, JSON.stringify(enrichedRows, null, 2));
+
+      // Compute summary stats across ALL rows (not just the preview)
+      const firstRow = enrichedRows[0] ?? {};
+      const numericFields = Object.keys(firstRow).filter(
+        (k) => typeof firstRow[k] === "number",
+      );
+      const summary: Record<string, { total: number; avg: number; min: number; max: number }> = {};
+      for (const field of numericFields) {
+        const values = enrichedRows.map((r) => (r[field] as number) ?? 0);
+        const total = values.reduce((a, b) => a + b, 0);
+        summary[field] = {
+          total,
+          avg: Math.round((total / values.length) * 100) / 100,
+          min: Math.min(...values),
+          max: Math.max(...values),
+        };
+      }
+
       return jsonResult({
         rowCount: enrichedRows.length,
-        rows: enrichedRows,
+        truncated: true,
+        summary,
+        preview: enrichedRows.slice(0, 10),
+        exportPath: filename,
+        note: `Full ${enrichedRows.length} rows written to ${filename}. Summary stats computed across all rows.`,
       });
     },
   );
