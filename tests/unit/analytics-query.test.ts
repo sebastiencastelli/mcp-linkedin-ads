@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { buildAnalyticsQuery } from "../../src/tools/analytics.js";
 
+// ---------------------------------------------------------------------------
+// pivotValues injection tests
+// ---------------------------------------------------------------------------
+
 describe("buildAnalyticsQuery", () => {
   const accountUrn = "urn:li:sponsoredAccount:123456789";
   const baseQuery = {
@@ -100,3 +104,11 @@ describe("buildAnalyticsQuery", () => {
     expect(qs).toContain("campaigns=List(urn%3Ali%3AsponsoredCampaign%3A111)");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Smoke test: label resolution integration (verifies the enrichWithLabels
+// flow works end-to-end on the deployed server)
+// ---------------------------------------------------------------------------
+// These are covered by the smoke test suite (tests/smoke/analytics-bulk.smoke.test.ts).
+// The unit tests above protect the query builder; the smoke tests protect
+// the full pipeline including label resolution.

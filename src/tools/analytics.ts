@@ -7,11 +7,120 @@ import { ensureUrn } from "../linkedin/urn.js";
 import { AnalyticsQuerySchema } from "../schemas/analytics.js";
 import { AccountIdSchema } from "../schemas/common.js";
 import { callLinkedIn, jsonResult } from "./_helpers.js";
+import { logger } from "../utils/logger.js";
 
 interface AnalyticsRow {
   pivotValues?: string[];
+  pivotLabels?: string[];
   dateRange?: { start: { year: number; month: number; day: number }; end: { year: number; month: number; day: number } };
   [metric: string]: unknown;
+}
+
+// ---------------------------------------------------------------------------
+// URN → human-readable label resolution
+// ---------------------------------------------------------------------------
+
+/** URN prefixes resolvable via /adTargetingEntities?q=urns */
+const RESOLVABLE_PREFIXES = [
+  "urn:li:title:",
+  "urn:li:industry:",
+  "urn:li:seniority:",
+  "urn:li:function:",
+  "urn:li:geo:",
+  "urn:li:skill:",
+  "urn:li:degree:",
+  "urn:li:fieldOfStudy:",
+  "urn:li:organization:",
+  "urn:li:locale:",
+];
+
+/** Static labels for staffCountRange (no API call needed). */
+const STAFF_COUNT_LABELS: Record<string, string> = {
+  "urn:li:staffCountRange:(1,1)": "Self-employed (1)",
+  "urn:li:staffCountRange:(2,10)": "2-10 employees",
+  "urn:li:staffCountRange:(11,50)": "11-50 employees",
+  "urn:li:staffCountRange:(51,200)": "51-200 employees",
+  "urn:li:staffCountRange:(201,500)": "201-500 employees",
+  "urn:li:staffCountRange:(501,1000)": "501-1,000 employees",
+  "urn:li:staffCountRange:(1001,5000)": "1,001-5,000 employees",
+  "urn:li:staffCountRange:(5001,10000)": "5,001-10,000 employees",
+  "urn:li:staffCountRange:(10001,2147483647)": "10,001+ employees",
+};
+
+interface TargetingEntity {
+  urn: string;
+  name?: string;
+  facetUrn?: string;
+}
+
+/**
+ * Resolve a list of URNs to human-readable labels.
+ * Uses /adTargetingEntities?q=urns for demographic entities (titles,
+ * industries, geos, etc.) and static mapping for staffCountRange.
+ * Non-blocking: returns whatever it can resolve, leaves the rest as URN strings.
+ */
+async function resolveUrnsToLabels(
+  client: AxiosInstance,
+  urns: string[],
+): Promise<Map<string, string>> {
+  const labels = new Map<string, string>();
+  if (urns.length === 0) return labels;
+
+  // Static resolutions (staff count ranges)
+  for (const urn of urns) {
+    if (STAFF_COUNT_LABELS[urn]) {
+      labels.set(urn, STAFF_COUNT_LABELS[urn]);
+    }
+  }
+
+  // Dynamic resolutions via adTargetingEntities
+  const resolvable = urns.filter(
+    (u) => RESOLVABLE_PREFIXES.some((p) => u.startsWith(p)) && !labels.has(u),
+  );
+
+  if (resolvable.length === 0) return labels;
+
+  // Batch in groups of 50 (LinkedIn limit per call)
+  for (let i = 0; i < resolvable.length; i += 50) {
+    const batch = resolvable.slice(i, i + 50);
+    const encodedUrns = batch.map((u) => encodeURIComponent(u)).join(",");
+    try {
+      const data = await callLinkedIn<{ elements: TargetingEntity[] }>(
+        client,
+        `/adTargetingEntities?q=urns&urns=List(${encodedUrns})`,
+      );
+      for (const entity of data.elements) {
+        if (entity.name) {
+          labels.set(entity.urn, entity.name);
+        }
+      }
+      logger.debug({ resolved: data.elements.length, batch: batch.length }, "Resolved URNs to labels");
+    } catch {
+      // Non-blocking — if resolution fails, rows still have pivotValues (raw URNs)
+      logger.warn({ batchSize: batch.length }, "Failed to resolve targeting entity URNs to labels");
+    }
+  }
+
+  return labels;
+}
+
+/**
+ * Enrich analytics rows with pivotLabels by resolving pivotValues URNs.
+ */
+async function enrichWithLabels(
+  client: AxiosInstance,
+  rows: AnalyticsRow[],
+): Promise<AnalyticsRow[]> {
+  const allUrns = [...new Set(rows.flatMap((r) => r.pivotValues ?? []))];
+  if (allUrns.length === 0) return rows;
+
+  const labelMap = await resolveUrnsToLabels(client, allUrns);
+  if (labelMap.size === 0) return rows;
+
+  return rows.map((r) => ({
+    ...r,
+    pivotLabels: (r.pivotValues ?? []).map((urn) => labelMap.get(urn) ?? urn),
+  }));
 }
 
 interface AnalyticsResponse {
@@ -93,11 +202,14 @@ export function registerAnalyticsTools(server: McpServer, client: AxiosInstance)
       const qs = buildAnalyticsQuery(query, accountUrn);
       const data = await callLinkedIn<AnalyticsResponse>(client, `/adAnalytics?${qs}`);
 
+      // Resolve pivotValues URNs to human-readable labels (e.g. urn:li:title:26 → "Responsable marketing")
+      const enrichedRows = await enrichWithLabels(client, data.elements);
+
       const inlineLimit = 50;
-      if (data.elements.length <= inlineLimit) {
+      if (enrichedRows.length <= inlineLimit) {
         return jsonResult({
-          rowCount: data.elements.length,
-          rows: data.elements,
+          rowCount: enrichedRows.length,
+          rows: enrichedRows,
         });
       }
 
@@ -106,13 +218,13 @@ export function registerAnalyticsTools(server: McpServer, client: AxiosInstance)
       const exportsDir = join(dataDir, "exports");
       await mkdir(exportsDir, { recursive: true });
       const filename = join(exportsDir, `analytics-${Date.now()}.json`);
-      await writeFile(filename, JSON.stringify(data.elements, null, 2));
+      await writeFile(filename, JSON.stringify(enrichedRows, null, 2));
       return jsonResult({
-        rowCount: data.elements.length,
+        rowCount: enrichedRows.length,
         truncated: true,
-        preview: data.elements.slice(0, 10),
+        preview: enrichedRows.slice(0, 10),
         exportPath: filename,
-        note: `Full result written to ${filename} (${data.elements.length} rows). Read the file with the filesystem tool if you need the rest.`,
+        note: `Full result written to ${filename} (${enrichedRows.length} rows). Read the file with the filesystem tool if you need the rest.`,
       });
     },
   );
@@ -130,14 +242,14 @@ export function registerAnalyticsTools(server: McpServer, client: AxiosInstance)
       },
     },
     async ({ account_id, query }) => {
-      // Reuse the same handler logic by enforcing the accounts filter
       const accountUrn = ensureUrn("sponsoredAccount", account_id);
       const enrichedQuery = { ...query, accounts: [account_id], campaigns: undefined };
       const qs = buildAnalyticsQuery(enrichedQuery, accountUrn);
       const data = await callLinkedIn<AnalyticsResponse>(client, `/adAnalytics?${qs}`);
+      const enrichedRows = await enrichWithLabels(client, data.elements);
       return jsonResult({
-        rowCount: data.elements.length,
-        rows: data.elements,
+        rowCount: enrichedRows.length,
+        rows: enrichedRows,
       });
     },
   );
