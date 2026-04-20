@@ -24,7 +24,7 @@ interface AnalyticsResponse {
  * The endpoint is famously fiddly: dateRange is a Restli object literal, the
  * pivot is `q=analytics`, and metric arrays go in `fields`.
  */
-function buildAnalyticsQuery(
+export function buildAnalyticsQuery(
   query: z.infer<typeof AnalyticsQuerySchema>,
   accountUrn: string,
 ): string {
