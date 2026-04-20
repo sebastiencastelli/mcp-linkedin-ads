@@ -38,13 +38,19 @@ function buildAnalyticsQuery(
   // Build the query string manually so that Restli-special characters
   // (commas, parentheses, colons) are NOT percent-encoded.
   // Only URNs inside List(...) are individually URL-encoded.
+  // Always include pivotValues (identifies what each row represents, e.g.
+  // "urn:li:title:26") and dateRange (time period per row when granularity
+  // is not ALL). Without pivotValues, demographic pivots like
+  // MEMBER_JOB_TITLE return metrics without any way to know which title
+  // each row belongs to.
+  const allFields = [...new Set([...query.fields, "pivotValues", "dateRange"])];
+
   const parts: string[] = [
     `q=analytics`,
     `pivot=${query.pivot}`,
     `timeGranularity=${query.timeGranularity}`,
     `dateRange=${dateRange}`,
-    // fields must use raw commas — URLSearchParams would encode them as %2C
-    `fields=${query.fields.join(",")}`,
+    `fields=${allFields.join(",")}`,
   ];
 
   // Scope filters: prefer the most specific one passed by the caller
