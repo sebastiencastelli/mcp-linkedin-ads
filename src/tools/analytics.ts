@@ -1,5 +1,3 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AxiosInstance } from "axios";
 import { z } from "zod";
@@ -180,6 +178,128 @@ export function buildAnalyticsQuery(
   return parts.join("&");
 }
 
+// ---------------------------------------------------------------------------
+// In-memory analytics results cache for pagination.
+// When a query returns > PAGE_SIZE rows, the full result is cached here
+// and a pageToken is returned so Claude can request subsequent pages without
+// re-calling LinkedIn.
+// ---------------------------------------------------------------------------
+
+const PAGE_SIZE = 100;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+interface CacheEntry {
+  rows: AnalyticsRow[];
+  createdAt: number;
+}
+
+const analyticsCache = new Map<string, CacheEntry>();
+
+/** Evict stale entries on each access. */
+function evictStaleCache(): void {
+  const now = Date.now();
+  for (const [key, entry] of analyticsCache) {
+    if (now - entry.createdAt > CACHE_TTL_MS) {
+      analyticsCache.delete(key);
+    }
+  }
+}
+
+/** Compute summary stats across all numeric fields of a row set. */
+function computeSummary(rows: AnalyticsRow[]): Record<string, { total: number; avg: number; min: number; max: number }> {
+  const firstRow = rows[0] ?? {};
+  const numericFields = Object.keys(firstRow).filter(
+    (k) => typeof firstRow[k] === "number",
+  );
+  const summary: Record<string, { total: number; avg: number; min: number; max: number }> = {};
+  for (const field of numericFields) {
+    const values = rows.map((r) => (r[field] as number) ?? 0);
+    const total = values.reduce((a, b) => a + b, 0);
+    summary[field] = {
+      total,
+      avg: Math.round((total / values.length) * 100) / 100,
+      min: Math.min(...values),
+      max: Math.max(...values),
+    };
+  }
+  return summary;
+}
+
+/** Sort rows by the first numeric metric field, descending (top performers first). */
+function sortByTopMetric(rows: AnalyticsRow[]): AnalyticsRow[] {
+  const firstRow = rows[0] ?? {};
+  const sortField = Object.keys(firstRow).find((k) => typeof firstRow[k] === "number");
+  if (!sortField) return rows;
+  return [...rows].sort((a, b) => ((b[sortField] as number) ?? 0) - ((a[sortField] as number) ?? 0));
+}
+
+/**
+ * Paginated analytics response builder. Handles:
+ * - pageToken continuation (read from cache)
+ * - Fresh queries (call LinkedIn, enrich, sort, cache, return page 1)
+ */
+async function handleAnalyticsRequest(
+  client: AxiosInstance,
+  qs: string,
+  pageToken?: string,
+): Promise<ReturnType<typeof jsonResult>> {
+  evictStaleCache();
+
+  // --- Continuation: serve page from cache ---
+  if (pageToken) {
+    const [cacheId, offsetStr] = pageToken.split(":");
+    const offset = Number(offsetStr);
+    const entry = analyticsCache.get(cacheId ?? "");
+    if (!entry) {
+      return jsonResult({
+        error: "page_token_expired",
+        message: "The analytics cache entry has expired (TTL 5 min). Please re-run the original query.",
+      });
+    }
+    const page = entry.rows.slice(offset, offset + PAGE_SIZE);
+    const hasMore = offset + PAGE_SIZE < entry.rows.length;
+    return jsonResult({
+      rowCount: entry.rows.length,
+      page: Math.floor(offset / PAGE_SIZE) + 1,
+      pageSize: PAGE_SIZE,
+      rows: page,
+      nextPageToken: hasMore ? `${cacheId}:${offset + PAGE_SIZE}` : null,
+    });
+  }
+
+  // --- Fresh query: call LinkedIn ---
+  const data = await callLinkedIn<AnalyticsResponse>(client, `/adAnalytics?${qs}`);
+  const enrichedRows = await enrichWithLabels(client, data.elements);
+  const sortedRows = sortByTopMetric(enrichedRows);
+
+  // Small result: return everything inline
+  if (sortedRows.length <= PAGE_SIZE) {
+    return jsonResult({
+      rowCount: sortedRows.length,
+      rows: sortedRows,
+    });
+  }
+
+  // Large result: cache + return page 1 + summary
+  const cacheId = `analytics-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  analyticsCache.set(cacheId, { rows: sortedRows, createdAt: Date.now() });
+  logger.info({ cacheId, totalRows: sortedRows.length }, "Analytics result cached for pagination");
+
+  const page1 = sortedRows.slice(0, PAGE_SIZE);
+  const summary = computeSummary(sortedRows);
+
+  return jsonResult({
+    rowCount: sortedRows.length,
+    page: 1,
+    pageSize: PAGE_SIZE,
+    rows: page1,
+    summary,
+    nextPageToken: `${cacheId}:${PAGE_SIZE}`,
+    note: `Showing top ${PAGE_SIZE} of ${sortedRows.length} rows (sorted by top metric desc). ` +
+      `Call again with page_token to get the next page. Summary covers all ${sortedRows.length} rows.`,
+  });
+}
+
 export function registerAnalyticsTools(server: McpServer, client: AxiosInstance): void {
   server.registerTool(
     "get_campaign_analytics",
@@ -187,68 +307,25 @@ export function registerAnalyticsTools(server: McpServer, client: AxiosInstance)
       title: "Get Campaign Analytics",
       description:
         "Fetch performance analytics for one or more campaigns. Pivot/granularity/dateRange/fields " +
-        "control the shape of the report. Returns up to 25 rows inline; if the response is bigger " +
-        "it is written to ${DATA_DIR}/exports/{timestamp}.json and the path is returned. " +
-        "LinkedIn caps a single response at 15 000 rows — narrow the dateRange if you hit that. " +
-        "Guidance for timeGranularity selection: " +
-        "Use ALL for total aggregates, MONTHLY for trends > 30 days, " +
-        "DAILY only for short windows (7-14 days). " +
-        "DAILY on long ranges produces hundreds of rows that consume context — prefer MONTHLY.",
+        "control the shape of the report. Returns up to 100 rows inline (sorted by top metric). " +
+        "If the result has more rows, a nextPageToken is returned — call this tool again with " +
+        "page_token to get the next 100. LinkedIn caps at 15,000 rows per query. " +
+        "Guidance: Use ALL for aggregates, MONTHLY for trends > 30 days, DAILY for 7-14 day windows.",
       inputSchema: {
         account_id: AccountIdSchema.describe(
           "Ad Account scope. Used as a default filter if `query.campaigns` is not set.",
         ),
         query: AnalyticsQuerySchema,
+        page_token: z.string().optional().describe(
+          "Pagination token from a previous response's nextPageToken. " +
+          "Pass this to get the next page of results without re-querying LinkedIn.",
+        ),
       },
     },
-    async ({ account_id, query }) => {
+    async ({ account_id, query, page_token }) => {
       const accountUrn = ensureUrn("sponsoredAccount", account_id);
       const qs = buildAnalyticsQuery(query, accountUrn);
-      const data = await callLinkedIn<AnalyticsResponse>(client, `/adAnalytics?${qs}`);
-
-      // Resolve pivotValues URNs to human-readable labels (e.g. urn:li:title:26 → "Responsable marketing")
-      const enrichedRows = await enrichWithLabels(client, data.elements);
-
-      const inlineLimit = 25;
-      if (enrichedRows.length <= inlineLimit) {
-        return jsonResult({
-          rowCount: enrichedRows.length,
-          rows: enrichedRows,
-        });
-      }
-
-      // Big payload: write to disk and return the path + summary stats
-      const dataDir = process.env.DATA_DIR ?? "./data";
-      const exportsDir = join(dataDir, "exports");
-      await mkdir(exportsDir, { recursive: true });
-      const filename = join(exportsDir, `analytics-${Date.now()}.json`);
-      await writeFile(filename, JSON.stringify(enrichedRows, null, 2));
-
-      // Compute summary stats across ALL rows (not just the preview)
-      const firstRow = enrichedRows[0] ?? {};
-      const numericFields = Object.keys(firstRow).filter(
-        (k) => typeof firstRow[k] === "number",
-      );
-      const summary: Record<string, { total: number; avg: number; min: number; max: number }> = {};
-      for (const field of numericFields) {
-        const values = enrichedRows.map((r) => (r[field] as number) ?? 0);
-        const total = values.reduce((a, b) => a + b, 0);
-        summary[field] = {
-          total,
-          avg: Math.round((total / values.length) * 100) / 100,
-          min: Math.min(...values),
-          max: Math.max(...values),
-        };
-      }
-
-      return jsonResult({
-        rowCount: enrichedRows.length,
-        truncated: true,
-        summary,
-        preview: enrichedRows.slice(0, 10),
-        exportPath: filename,
-        note: `Full ${enrichedRows.length} rows written to ${filename}. Summary stats computed across all rows.`,
-      });
+      return handleAnalyticsRequest(client, qs, page_token);
     },
   );
 
@@ -258,65 +335,22 @@ export function registerAnalyticsTools(server: McpServer, client: AxiosInstance)
       title: "Get Account Analytics",
       description:
         "Fetch aggregated performance analytics at the Ad Account level (across all campaigns). " +
-        "Same shape as get_campaign_analytics but the pivot defaults to ACCOUNT. " +
-        "Returns up to 25 rows inline; if the response is bigger it is written to " +
-        "${DATA_DIR}/exports/{timestamp}.json and the path is returned. " +
-        "Guidance for timeGranularity selection: " +
-        "Use ALL for total aggregates, MONTHLY for trends > 30 days, " +
-        "DAILY only for short windows (7-14 days). " +
-        "DAILY on long ranges produces hundreds of rows that consume context — prefer MONTHLY.",
+        "Same as get_campaign_analytics but scoped to the full account. " +
+        "Returns up to 100 rows inline. Pass page_token for subsequent pages. " +
+        "Guidance: Use ALL for aggregates, MONTHLY for trends > 30 days, DAILY for 7-14 day windows.",
       inputSchema: {
         account_id: AccountIdSchema,
         query: AnalyticsQuerySchema,
+        page_token: z.string().optional().describe(
+          "Pagination token from a previous response's nextPageToken.",
+        ),
       },
     },
-    async ({ account_id, query }) => {
+    async ({ account_id, query, page_token }) => {
       const accountUrn = ensureUrn("sponsoredAccount", account_id);
       const enrichedQuery = { ...query, accounts: [account_id], campaigns: undefined };
       const qs = buildAnalyticsQuery(enrichedQuery, accountUrn);
-      const data = await callLinkedIn<AnalyticsResponse>(client, `/adAnalytics?${qs}`);
-      const enrichedRows = await enrichWithLabels(client, data.elements);
-
-      const inlineLimit = 25;
-      if (enrichedRows.length <= inlineLimit) {
-        return jsonResult({
-          rowCount: enrichedRows.length,
-          rows: enrichedRows,
-        });
-      }
-
-      // Big payload: write to disk and return the path + summary stats
-      const dataDir = process.env.DATA_DIR ?? "./data";
-      const exportsDir = join(dataDir, "exports");
-      await mkdir(exportsDir, { recursive: true });
-      const filename = join(exportsDir, `analytics-${Date.now()}.json`);
-      await writeFile(filename, JSON.stringify(enrichedRows, null, 2));
-
-      // Compute summary stats across ALL rows (not just the preview)
-      const firstRow = enrichedRows[0] ?? {};
-      const numericFields = Object.keys(firstRow).filter(
-        (k) => typeof firstRow[k] === "number",
-      );
-      const summary: Record<string, { total: number; avg: number; min: number; max: number }> = {};
-      for (const field of numericFields) {
-        const values = enrichedRows.map((r) => (r[field] as number) ?? 0);
-        const total = values.reduce((a, b) => a + b, 0);
-        summary[field] = {
-          total,
-          avg: Math.round((total / values.length) * 100) / 100,
-          min: Math.min(...values),
-          max: Math.max(...values),
-        };
-      }
-
-      return jsonResult({
-        rowCount: enrichedRows.length,
-        truncated: true,
-        summary,
-        preview: enrichedRows.slice(0, 10),
-        exportPath: filename,
-        note: `Full ${enrichedRows.length} rows written to ${filename}. Summary stats computed across all rows.`,
-      });
+      return handleAnalyticsRequest(client, qs, page_token);
     },
   );
 }
